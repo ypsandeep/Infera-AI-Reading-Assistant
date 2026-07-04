@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Reading Assistant</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="panel">
+    <header class="panel__header">
+      <span class="panel__mark">AI</span>
+      <h1 class="panel__title">Reading Assistant</h1>
+    </header>
+
+    <section class="status" id="status">
+      <p class="status__line">Checking this page…</p>
+    </section>
+
+    <section class="page-info" id="pageInfo" hidden>
+      <dl>
+        <dt>Page</dt>
+        <dd id="pageTitle">—</dd>
+      </dl>
+
+      <div class="domain-row">
+        <span class="domain-row__label">Domain</span>
+        <select id="domainSelect" class="domain-row__select"></select>
+      </div>
+    </section>
+
+    <section class="apikey-warning" id="apiKeyWarning" hidden>
+      No OpenRouter API key set yet — explanations won't work until you add one.
+    </section>
+
+    <footer class="panel__footer">
+      <span>Highlight any word on the page to get an explanation.</span>
+      <a href="#" id="openOptions">Settings</a>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

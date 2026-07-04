@@ -1,0 +1,607 @@
+/* content/content.css
+   Namespaced with .ara- prefix and `all: initial` on the root containers
+   so host-page styles can't bleed in. Loaded as a content_script CSS file.
+
+   Design direction: a clean, light, Gemini-inspired look — white surfaces,
+   generous rounding, a blue -> violet -> pink gradient reserved for
+   accents/interactive elements and the "thinking" shimmer, and a
+   typewriter-style reveal for AI-generated text instead of it just
+   appearing all at once. */
+[id="ara-root"],
+[id="ara-root"] * {
+  all: initial;
+  display: revert; /* restore each tag's natural block/inline default; components override where needed */
+  box-sizing: border-box;
+  font-family: "Google Sans", "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---------- Design tokens ---------- */
+[id="ara-root"] {
+  --ara-ink: #1f1f1f;
+  --ara-muted: #5f6368;
+  --ara-faint: #9aa0a6;
+  --ara-surface: #ffffff;
+  --ara-surface-2: #f2f3fb;
+  --ara-surface-3: #eceefc;
+  --ara-border: #e6e8f0;
+
+  /* Gemini-style multi-color sweep, used for accents/gradients only. */
+  --ara-blue: #4e7fff;
+  --ara-violet: #9457eb;
+  --ara-pink: #f45bae;
+  --ara-primary: #6a5cf0;
+  --ara-primary-grad: linear-gradient(90deg, var(--ara-blue) 0%, var(--ara-violet) 55%, var(--ara-pink) 100%);
+  --ara-glow: rgba(148, 87, 235, 0.28);
+
+  --ara-success: #059669;
+  --ara-success-ink: #065f46;
+  --ara-success-bg: #ecfdf5;
+  --ara-success-border: #a7e8cf;
+
+  --ara-warn: #d97706;
+  --ara-warn-ink: #7c4a06;
+  --ara-warn-bg: #fffaf0;
+  --ara-warn-border: #f6dfae;
+
+  --ara-danger: #dc2626;
+  --ara-danger-ink: #991b1b;
+  --ara-danger-bg: #fef2f2;
+  --ara-danger-border: #fbd0d0;
+
+  --ara-radius-lg: 20px;
+  --ara-radius-md: 13px;
+  --ara-radius-sm: 999px;
+}
+
+#ara-root {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+}
+
+/* ---------- Explain button ---------- */
+
+.ara-explain-btn {
+  position: absolute !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--ara-primary-grad);
+  background-size: 160% auto;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 8px 15px;
+  border-radius: var(--ara-radius-sm);
+  box-shadow: 0 8px 20px -4px var(--ara-glow);
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+  transition: opacity 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease, background-position 0.3s ease;
+}
+.ara-explain-btn--visible { opacity: 1; transform: translateY(0) scale(1); }
+.ara-explain-btn:hover {
+  background-position: 100% center;
+  box-shadow: 0 10px 26px -3px var(--ara-glow);
+  transform: translateY(-1px) scale(1);
+}
+.ara-explain-btn:active { transform: translateY(0) scale(0.97); }
+.ara-explain-btn__icon { font-size: 12px; line-height: 1; }
+.ara-explain-btn__label { white-space: nowrap; }
+
+/* ---------- Card ---------- */
+
+.ara-card {
+  position: absolute !important;
+  pointer-events: auto;
+  width: 380px;
+  max-width: 92vw;
+  max-height: 75vh;
+  overflow-y: auto;
+  background: var(--ara-surface);
+  color: var(--ara-ink);
+  border-radius: var(--ara-radius-lg);
+  box-shadow: 0 24px 56px -14px rgba(30, 27, 75, 0.28), 0 2px 10px rgba(30, 27, 75, 0.06);
+  border: 1px solid var(--ara-border);
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.ara-card--visible { opacity: 1; transform: translateY(0) scale(1); }
+
+.ara-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px 13px;
+  background: var(--ara-surface);
+  border-bottom: 1px solid var(--ara-border);
+  border-radius: var(--ara-radius-lg) var(--ara-radius-lg) 0 0;
+}
+
+.ara-card__headertop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ara-card__titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ara-card__sparkle {
+  font-size: 14px;
+  flex-shrink: 0;
+  filter: saturate(1.3);
+}
+
+.ara-card__title {
+  font-weight: 700;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  /* Gemini-style gradient text treatment on the title. */
+  background: var(--ara-primary-grad);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* Subject/domain row — deliberately its own line right under the title so
+   it's immediately visible at the top of the card, not buried inline. */
+.ara-card__subjectrow { display: flex; }
+
+.ara-card__domain {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #4b3fa8;
+  background: var(--ara-surface-3);
+  border: 1px solid var(--ara-border);
+  padding: 4px 10px 4px 6px;
+  border-radius: var(--ara-radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+.ara-card__domain:hover { background: #e3e0fb; border-color: #cfc8f7; transform: translateY(-1px); }
+.ara-card__domain-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ara-primary-grad);
+  flex-shrink: 0;
+}
+.ara-card__domain-edit { font-size: 9px; opacity: 0.75; }
+
+.ara-card__close {
+  cursor: pointer;
+  color: var(--ara-faint);
+  font-size: 17px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ara-card__close:hover { color: var(--ara-ink); background: var(--ara-surface-2); }
+
+.ara-card__body { padding: 16px 18px 18px; }
+
+.ara-card__section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ara-border);
+}
+.ara-card__section:first-child { padding-top: 0; }
+.ara-card__section:last-of-type { border-bottom: none; }
+
+.ara-card__labelrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+.ara-card__icon { font-size: 13px; line-height: 1; }
+.ara-card__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ara-muted);
+  font-weight: 700;
+}
+.ara-card__text { color: var(--ara-ink); font-size: 14px; line-height: 1.65; display: block; min-height: 1.3em; }
+
+.ara-card__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ---------- Buttons (Gemini-style pill shapes) ---------- */
+
+.ara-btn {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  padding: 10px 16px;
+  border-radius: var(--ara-radius-sm);
+  text-align: center;
+  flex: 1;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.ara-btn:active { transform: scale(0.97); }
+
+.ara-btn--primary {
+  background: var(--ara-primary-grad);
+  background-size: 160% auto;
+  color: #fff;
+  box-shadow: 0 6px 16px -4px var(--ara-glow);
+}
+.ara-btn--primary:hover {
+  background-position: 100% center;
+  box-shadow: 0 8px 20px -3px var(--ara-glow);
+}
+
+/* Ghost button: flat outline that fills in with a soft tint and gets an
+   animated underline beneath the label on hover — a small "text effect"
+   instead of a plain background swap. */
+.ara-btn--ghost {
+  background: transparent;
+  color: var(--ara-muted);
+  border: 1px solid var(--ara-border);
+  position: relative;
+}
+.ara-btn--ghost::after {
+  content: "";
+  display: block;
+  height: 2px;
+  width: 0%;
+  margin: 3px auto 0;
+  background: var(--ara-primary-grad);
+  border-radius: 2px;
+  transition: width 0.18s ease;
+}
+.ara-btn--ghost:hover {
+  color: var(--ara-ink);
+  border-color: #d8dcfb;
+  background: var(--ara-surface-2);
+}
+.ara-btn--ghost:hover::after { width: 55%; }
+
+/* ---------- Loading / "thinking" state ---------- */
+
+.ara-spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 26px 0 22px;
+}
+.ara-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid var(--ara-surface-3);
+  border-top-color: var(--ara-violet);
+  border-radius: 50%;
+  animation: ara-spin 0.7s linear infinite;
+}
+@keyframes ara-spin { to { transform: rotate(360deg); } }
+
+/* Gemini-style shimmering gradient text for the loading label, instead of
+   a static "Loading…" string. */
+.ara-thinking-text {
+  font-size: 13px;
+  font-weight: 600;
+  background: linear-gradient(90deg, var(--ara-faint) 0%, var(--ara-blue) 35%, var(--ara-violet) 50%, var(--ara-pink) 65%, var(--ara-faint) 100%);
+  background-size: 250% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: ara-shimmer 1.8s linear infinite;
+}
+@keyframes ara-shimmer {
+  from { background-position: 200% center; }
+  to { background-position: -50% center; }
+}
+
+/* Blinking caret used while text is being "typed" in. */
+.ara-typecursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--ara-violet);
+  margin-left: 1px;
+  vertical-align: -2px;
+  animation: ara-blink 0.85s steps(1) infinite;
+}
+@keyframes ara-blink { 50% { opacity: 0; } }
+
+.ara-error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: var(--ara-danger-bg);
+  border: 1px solid var(--ara-danger-border);
+  border-radius: var(--ara-radius-md);
+  padding: 11px 12px;
+}
+.ara-error-box__icon { font-size: 15px; line-height: 1.4; }
+.ara-error-box__text { color: var(--ara-danger-ink); font-size: 13px; line-height: 1.5; }
+
+.ara-answer-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--ara-success-bg);
+  border: 1px solid var(--ara-success-border);
+  border-radius: var(--ara-radius-md);
+  padding: 13px 14px;
+  margin-bottom: 14px;
+}
+.ara-answer-box__icon { font-size: 17px; line-height: 1.4; flex-shrink: 0; }
+.ara-answer-box__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ara-answer-box__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ara-success);
+  font-weight: 700;
+}
+.ara-answer-box__text { color: var(--ara-success-ink); font-size: 14.5px; font-weight: 600; line-height: 1.55; min-height: 1.3em; }
+
+.ara-wrongopt-list { display: flex; flex-direction: column; gap: 8px; }
+.ara-wrongopt {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: var(--ara-warn-bg);
+  border: 1px solid var(--ara-warn-border);
+  border-radius: var(--ara-radius-md);
+  padding: 8px 10px;
+}
+.ara-wrongopt__badge {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ara-warn);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ara-wrongopt__text { color: var(--ara-warn-ink); font-size: 13px; line-height: 1.45; min-height: 1.3em; }
+
+.ara-learn__tailored {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ara-primary);
+  background: var(--ara-surface-2);
+  border: 1px solid var(--ara-border);
+  border-radius: var(--ara-radius-sm);
+  padding: 5px 11px;
+  margin-bottom: 12px;
+  width: fit-content;
+}
+
+.ara-learn { display: block; }
+.ara-learn .ara-learn__item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ara-border);
+}
+.ara-learn .ara-learn__item:last-child { border-bottom: none; padding-bottom: 0; }
+.ara-learn .ara-learn__item:first-child { padding-top: 0; }
+.ara-learn dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ara-muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.ara-learn dd {
+  display: block;
+  margin: 0;
+  color: var(--ara-ink);
+  font-size: 14px;
+  line-height: 1.65;
+  min-height: 1.3em;
+}
+
+/* ---------- Domain confirmation banner ---------- */
+
+.ara-banner {
+  position: fixed !important;
+  top: 16px;
+  right: 16px;
+  pointer-events: auto;
+  width: 270px;
+  background: var(--ara-surface);
+  border: 1px solid var(--ara-border);
+  border-radius: var(--ara-radius-md);
+  box-shadow: 0 16px 40px -8px rgba(30, 27, 75, 0.26);
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--ara-ink);
+}
+.ara-banner__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ara-banner__title { font-weight: 700; display: block; }
+.ara-banner__close {
+  cursor: pointer;
+  color: var(--ara-faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.ara-banner__close:hover { color: var(--ara-ink); background: var(--ara-surface-2); }
+.ara-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ara-chip {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: var(--ara-radius-sm);
+  background: var(--ara-surface-2);
+  color: #3c3579;
+  border: 1px solid var(--ara-border);
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+.ara-chip:hover { background: #e3e0fb; border-color: #cfc8f7; transform: translateY(-1px); }
+
+.ara-banner__custom {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ara-border);
+}
+.ara-banner__input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 11.5px;
+  padding: 6px 9px;
+  border-radius: var(--ara-radius-sm);
+  border: 1px solid var(--ara-border);
+  background: #ffffff;
+  color: var(--ara-ink);
+}
+.ara-banner__input:focus { outline: 2px solid #ded9fc; border-color: var(--ara-primary); }
+.ara-banner__set {
+  font-size: 11px;
+  padding: 6px 12px;
+  flex-shrink: 0;
+}
+
+/* ---------- Inline domain editor (opened from the card's domain badge) ---------- */
+
+.ara-domain-editor {
+  position: fixed !important;
+  z-index: 2147483647;
+  pointer-events: auto;
+  width: 250px;
+  background: var(--ara-surface);
+  border: 1px solid var(--ara-border);
+  border-radius: var(--ara-radius-md);
+  box-shadow: 0 16px 36px -8px rgba(30, 27, 75, 0.28);
+  padding: 12px;
+  font-size: 12px;
+  color: var(--ara-ink);
+  animation: ara-toast-in 0.14s ease-out;
+}
+.ara-domain-editor__title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ara-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+/* ---------- Toast / popup notifications ---------- */
+
+.ara-toast {
+  position: fixed !important;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 300px;
+  max-width: 90vw;
+  background: #ffffff;
+  border-radius: var(--ara-radius-md);
+  box-shadow: 0 16px 40px -8px rgba(30, 27, 75, 0.28);
+  padding: 13px 14px;
+  border-left: 4px solid var(--ara-primary);
+  animation: ara-toast-in 0.18s ease-out;
+}
+.ara-toast--warn { border-left-color: var(--ara-warn); }
+.ara-toast--error { border-left-color: var(--ara-danger); }
+.ara-toast--success { border-left-color: var(--ara-success); }
+
+@keyframes ara-toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ara-toast__icon { font-size: 17px; line-height: 1.3; flex-shrink: 0; }
+
+.ara-toast__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+
+.ara-toast__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ara-ink);
+}
+
+.ara-toast__message {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ara-muted);
+}
+
+.ara-toast__actions { margin-top: 4px; }
+
+.ara-toast__action {
+  display: inline-block;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ara-primary);
+  padding: 5px 11px;
+  border-radius: var(--ara-radius-sm);
+  background: var(--ara-surface-2);
+  transition: background 0.12s ease;
+}
+.ara-toast__action:hover { background: #e3e0fb; }
+
+.ara-toast__close {
+  cursor: pointer;
+  color: var(--ara-faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.ara-toast__close:hover { color: var(--ara-ink); background: var(--ara-surface-2); }

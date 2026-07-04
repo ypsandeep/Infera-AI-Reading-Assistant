@@ -1,0 +1,120 @@
+:root {
+  --ink: #1b1f2a;
+  --ink-soft: #5a6072;
+  --paper: #fbfbfd;
+  --accent: #4a6cf7;
+  --accent-soft: #eef1ff;
+  --ok: #2ba84a;
+  --err: #c23b3b;
+  --line: #e6e7ee;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #f3f4f8;
+  color: var(--ink);
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+}
+
+.panel {
+  max-width: 520px;
+  margin: 40px auto;
+  background: var(--paper);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 24px 28px 28px;
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.panel__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.panel__title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.field {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.field:first-of-type { border-top: none; }
+
+.field__label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.field__input {
+  width: 100%;
+  padding: 9px 11px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+}
+.field__input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.field__hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.field__hint a { color: var(--accent); }
+.field__hint code {
+  background: #f1f2f7;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.btn {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+}
+.btn--primary { background: var(--accent); color: white; }
+.btn--primary:hover { background: #3a5ce0; }
+.btn--ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
+.btn--ghost:hover { background: #f1f2f7; }
+
+.status { font-size: 12px; color: var(--ok); }
+.status--err { color: var(--err); }

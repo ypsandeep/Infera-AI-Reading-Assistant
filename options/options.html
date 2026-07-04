@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Reading Assistant — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="panel">
+    <header class="panel__header">
+      <span class="panel__mark">AI</span>
+      <h1 class="panel__title">Reading Assistant — Settings</h1>
+    </header>
+
+    <section class="field">
+      <label class="field__label" for="apiKey">OpenRouter API key</label>
+      <input class="field__input" id="apiKey" type="password" placeholder="Paste your OpenRouter API key" autocomplete="off" />
+      <p class="field__hint">
+        Get a key at
+        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.
+        Stored locally in this browser only — never sent anywhere except OpenRouter's API.
+      </p>
+      <div class="field__row">
+        <button class="btn btn--primary" id="saveBtn">Save key</button>
+        <span class="status" id="saveStatus"></span>
+      </div>
+    </section>
+
+    <section class="field">
+      <label class="field__label" for="model">Model</label>
+      <input class="field__input" id="model" type="text" placeholder="openai/gpt-4o-mini" autocomplete="off" />
+      <p class="field__hint">
+        Any OpenRouter model slug works — see the full list at
+        <a href="https://openrouter.ai/models" target="_blank" rel="noopener">openrouter.ai/models</a>.
+        Leave blank to use the default (<code>openai/gpt-4o-mini</code>).
+      </p>
+      <div class="field__row">
+        <button class="btn btn--primary" id="saveModelBtn">Save model</button>
+        <span class="status" id="saveModelStatus"></span>
+      </div>
+    </section>
+
+    <section class="field">
+      <span class="field__label">Cached explanations</span>
+      <p class="field__hint">Explanations and learning objects are cached per concept+domain so repeat lookups don't cost another API call.</p>
+      <div class="field__row">
+        <button class="btn btn--ghost" id="clearCacheBtn">Clear cache</button>
+        <span class="status" id="clearStatus"></span>
+      </div>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
