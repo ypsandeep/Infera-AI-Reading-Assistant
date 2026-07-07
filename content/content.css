@@ -164,7 +164,7 @@
 
 /* Subject/domain row — deliberately its own line right under the title so
    it's immediately visible at the top of the card, not buried inline. */
-.ara-card__subjectrow { display: flex; }
+.ara-card__subjectrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
 .ara-card__domain {
   display: inline-flex;
@@ -189,6 +189,56 @@
   flex-shrink: 0;
 }
 .ara-card__domain-edit { font-size: 9px; opacity: 0.75; }
+
+.ara-difficulty-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 4px 10px;
+  border-radius: var(--ara-radius-sm);
+  border: 1px solid transparent;
+}
+.ara-difficulty-badge--beginner {
+  color: var(--ara-success);
+  background: var(--ara-success-bg);
+  border-color: var(--ara-success-border);
+}
+.ara-difficulty-badge--intermediate {
+  color: var(--ara-warn);
+  background: var(--ara-warn-bg);
+  border-color: var(--ara-warn-border);
+}
+.ara-difficulty-badge--advanced {
+  color: var(--ara-danger);
+  background: var(--ara-danger-bg);
+  border-color: var(--ara-danger-border);
+}
+
+/* Collapsed by default per spec ("collapse optional sections to avoid
+   clutter") — a small text-effect link rather than a heavy button, since
+   it's a minor, optional addition to the explanation. */
+.ara-analogy-toggle {
+  display: inline-block;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ara-primary);
+  padding: 2px 0;
+  position: relative;
+}
+.ara-analogy-toggle::after {
+  content: "";
+  display: block;
+  height: 1.5px;
+  width: 0%;
+  background: var(--ara-primary-grad);
+  border-radius: 2px;
+  transition: width 0.16s ease;
+}
+.ara-analogy-toggle:hover::after { width: 100%; }
+.ara-analogy-content { margin-top: 8px; }
 
 .ara-card__close {
   cursor: pointer;

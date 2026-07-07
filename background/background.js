@@ -14,12 +14,41 @@ importScripts(
 
 const API_KEY_STORAGE_KEY = "settings:openrouterApiKey";
 const MODEL_STORAGE_KEY = "settings:openrouterModel";
+const EXTENSION_ENABLED_KEY = "settings:extensionEnabled"; // global on/off switch
 
 /** @type {Map<number, object>} tabId -> { context, domain, needsConfirmation } */
 const tabState = new Map();
 
 function domainStorageKey(hostname) {
   return `domain:${hostname}`;
+}
+
+function siteDisabledStorageKey(hostname) {
+  return `siteDisabled:${hostname}`;
+}
+
+async function isExtensionEnabled() {
+  const v = await self.ARAStorage.get(EXTENSION_ENABLED_KEY);
+  return v !== false; // unset = enabled by default
+}
+
+async function isSiteDisabled(hostname) {
+  if (!hostname) return false;
+  const v = await self.ARAStorage.get(siteDisabledStorageKey(hostname));
+  return v === true;
+}
+
+// Tells every open tab's content script to re-check its enabled state right
+// away, instead of waiting for the next page load to notice the toggle
+// changed. Tabs without an injected content script (chrome://, the Web
+// Store, etc.) will error on this and that's expected -- swallow it.
+function broadcastEnabledStateChanged() {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id == null) continue;
+      chrome.tabs.sendMessage(tab.id, { type: "ENABLED_STATE_CHANGED" }, () => void chrome.runtime.lastError);
+    }
+  });
 }
 
 async function resolveDomainForPage(pageContext) {
@@ -78,6 +107,17 @@ async function resolveDomainForPage(pageContext) {
 async function handlePageLoaded(message, sender, sendResponse) {
   const tabId = sender.tab?.id;
   const pageContext = message.pageContext;
+
+  // Belt-and-suspenders: the content script already checks this before ever
+  // calling registerPage(), but a stale/racing script (e.g. a tab open from
+  // before the toggle changed) shouldn't be able to trigger domain
+  // resolution -- including a real Tier-2 AI network call -- while disabled.
+  const globalEnabled = await isExtensionEnabled();
+  const siteDisabled = await isSiteDisabled(pageContext?.hostname);
+  if (!globalEnabled || siteDisabled) {
+    sendResponse({ ok: false, code: "DISABLED", error: "Extension is disabled." });
+    return;
+  }
 
   const { domain, needsConfirmation, source, scores } = await resolveDomainForPage(pageContext);
 
@@ -139,6 +179,12 @@ async function handleExplainConcept(message, sender, sendResponse) {
   try {
     const tabId = sender.tab?.id ?? message.tabId;
     const state = tabState.get(tabId);
+
+    if (!(await isExtensionEnabled()) || (await isSiteDisabled(state?.context?.hostname))) {
+      sendResponse({ ok: false, code: "DISABLED", error: "Extension is disabled." });
+      return;
+    }
+
     const domain = state?.domain || null;
     const concept = message.concept.trim();
 
@@ -147,14 +193,23 @@ async function handleExplainConcept(message, sender, sendResponse) {
 
     const cached = await self.ARACache.getExplanation(concept, effectiveDomain);
     if (cached) {
+      await self.ARACache.markConceptSeen(concept);
       sendResponse({ ok: true, source: "cache", domain: effectiveDomain, explanation: cached });
       return;
     }
 
+    const seenBefore = await self.ARACache.hasSeenConcept(concept);
     const apiKey = await self.ARAStorage.get(API_KEY_STORAGE_KEY);
     const model = await self.ARAStorage.get(MODEL_STORAGE_KEY);
-    const explanation = await self.ARAOpenRouterService.getFastExplanation(concept, effectiveDomain, apiKey, model);
+    const explanation = await self.ARAOpenRouterService.getFastExplanation(
+      concept,
+      effectiveDomain,
+      apiKey,
+      model,
+      seenBefore
+    );
     await self.ARACache.setExplanation(concept, effectiveDomain, explanation);
+    await self.ARACache.markConceptSeen(concept);
     sendResponse({ ok: true, source: "openrouter", domain: effectiveDomain, explanation });
   } catch (err) {
     // This catch is what guarantees sendResponse always fires. Without it,
@@ -169,6 +224,12 @@ async function handleLearnMore(message, sender, sendResponse) {
   try {
     const tabId = sender.tab?.id ?? message.tabId;
     const state = tabState.get(tabId);
+
+    if (!(await isExtensionEnabled()) || (await isSiteDisabled(state?.context?.hostname))) {
+      sendResponse({ ok: false, code: "DISABLED", error: "Extension is disabled." });
+      return;
+    }
+
     const domain = state?.domain || null;
     const concept = message.concept.trim();
 
@@ -240,6 +301,30 @@ async function handleOpenOptions(message, sender, sendResponse) {
   }
 }
 
+async function handleGetEnabledState(message, sender, sendResponse) {
+  const hostname = message.hostname || "";
+  const globalEnabled = await isExtensionEnabled();
+  const siteDisabled = await isSiteDisabled(hostname);
+  sendResponse({ ok: true, enabled: globalEnabled && !siteDisabled, globalEnabled, siteDisabled });
+}
+
+async function handleSetExtensionEnabled(message, sender, sendResponse) {
+  await self.ARAStorage.set(EXTENSION_ENABLED_KEY, Boolean(message.enabled));
+  broadcastEnabledStateChanged();
+  sendResponse({ ok: true });
+}
+
+async function handleSetSiteDisabled(message, sender, sendResponse) {
+  const hostname = message.hostname || "";
+  if (message.disabled) {
+    await self.ARAStorage.set(siteDisabledStorageKey(hostname), true);
+  } else {
+    await self.ARAStorage.remove(siteDisabledStorageKey(hostname));
+  }
+  broadcastEnabledStateChanged();
+  sendResponse({ ok: true });
+}
+
 const HANDLERS = {
   PAGE_LOADED: handlePageLoaded,
   SET_DOMAIN: handleSetDomain,
@@ -251,6 +336,9 @@ const HANDLERS = {
   SET_MODEL: handleSetModel,
   CLEAR_CACHE: handleClearCache,
   OPEN_OPTIONS: handleOpenOptions,
+  GET_ENABLED_STATE: handleGetEnabledState,
+  SET_EXTENSION_ENABLED: handleSetExtensionEnabled,
+  SET_SITE_DISABLED: handleSetSiteDisabled,
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

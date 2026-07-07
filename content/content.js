@@ -14,6 +14,7 @@
   let toastEl = null;
   let toastTimer = null;
   let lastToastKind = null; // avoid re-spamming the same toast on repeated failures
+  let isActive = true; // whether the extension is enabled globally + for this site
 
   // Elements placed via clampElementToViewport() are positioned in viewport
   // coordinates, but their containing root uses `position: fixed`, which
@@ -319,6 +320,10 @@
   // Routes a failed response's error `code` to the right toast (if any).
   // Returns true if a toast was shown for it.
   function maybeShowToastForCode(code) {
+    if (code === "DISABLED") {
+      isActive = false;
+      return true; // suppress the generic error message -- this isn't a failure, just an out-of-sync toggle
+    }
     if (code === "NO_API_KEY") {
       showApiKeyToast();
       return true;
@@ -355,6 +360,10 @@
   function registerPage() {
     pageContext = self.ARAPageExtractor.extractPageContext();
     chrome.runtime.sendMessage({ type: "PAGE_LOADED", pageContext }, (response) => {
+      if (response?.code === "DISABLED") {
+        isActive = false; // background disagreed with our own enabled-state check (e.g. a toggle raced this call) -- defer to it, quietly
+        return;
+      }
       if (chrome.runtime.lastError || !response?.ok) {
         // The most common cause here is the service worker having just
         // reloaded (e.g. after an extension update) while this tab's
@@ -387,6 +396,7 @@
   const MAX_SELECTION_CHARS = 1200; // roughly a long paragraph
 
   function onSelectionChange() {
+    if (!isActive) return;
     const selection = window.getSelection();
     const raw = selection ? selection.toString() : "";
     const text = raw.replace(/\s+/g, " ").trim();
@@ -716,17 +726,101 @@
       if (explanation.explanation) texts.push(explanation.explanation);
       typeSequence(body.querySelectorAll("[data-type]"), texts);
     } else {
+      // Difficulty badge sits next to the domain badge at the top of the
+      // card (colored green/yellow/red), per spec.
+      const difficulty = (explanation.difficulty || "").toUpperCase();
+      const validDifficulty = ["BEGINNER", "INTERMEDIATE", "ADVANCED"].includes(difficulty) ? difficulty : null;
+      let diffBadge = subjectRow.querySelector(".ara-difficulty-badge");
+      if (validDifficulty) {
+        if (!diffBadge) {
+          diffBadge = document.createElement("span");
+          subjectRow.appendChild(diffBadge);
+        }
+        diffBadge.className = `ara-difficulty-badge ara-difficulty-badge--${validDifficulty.toLowerCase()}`;
+        diffBadge.textContent = validDifficulty.charAt(0) + validDifficulty.slice(1).toLowerCase();
+      } else if (diffBadge) {
+        diffBadge.remove();
+      }
+
+      // A clean AI-generated title reads better in the header than the
+      // raw highlighted text, once we have one.
+      if (explanation.title) {
+        const titleEl = cardEl.querySelector(".ara-card__title");
+        if (titleEl) titleEl.textContent = explanation.title;
+      }
+
+      // Backward-compatible: anything already sitting in a user's cache
+      // from before this change only has {definition, simple, example} —
+      // this still renders correctly, it just won't have a difficulty
+      // badge, intuition, or analogy section.
+      const mainText = explanation.explanation || explanation.simple || explanation.definition || "";
+      const intuition = explanation.intuition || "";
+      const example = explanation.example || "";
+      const analogy = explanation.analogy || "";
+
       body.innerHTML = `
         <div class="ara-card__section">
-          <div class="ara-card__labelrow"><span class="ara-card__icon">💡</span><span class="ara-card__label">Simple explanation</span></div>
+          <div class="ara-card__labelrow"><span class="ara-card__icon">💡</span><span class="ara-card__label">Explanation</span></div>
           <span class="ara-card__text" data-type></span>
         </div>
+        ${
+          intuition
+            ? `<div class="ara-card__section">
+                 <div class="ara-card__labelrow"><span class="ara-card__icon">🎯</span><span class="ara-card__label">Why it exists</span></div>
+                 <span class="ara-card__text" data-type></span>
+               </div>`
+            : ""
+        }
+        ${
+          example
+            ? `<div class="ara-card__section">
+                 <div class="ara-card__labelrow"><span class="ara-card__icon">🧪</span><span class="ara-card__label">Example</span></div>
+                 <span class="ara-card__text" data-type></span>
+               </div>`
+            : ""
+        }
+        ${
+          analogy
+            ? `<div class="ara-card__section">
+                 <span class="ara-analogy-toggle" id="ara-analogy-toggle">🔗 Show analogy</span>
+                 <div class="ara-analogy-content" id="ara-analogy-content" hidden>
+                   <span class="ara-card__text" data-type></span>
+                 </div>
+               </div>`
+            : ""
+        }
         <div class="ara-card__actions">
           <span class="ara-btn ara-btn--primary" id="ara-learn-more">Learn more</span>
           <span class="ara-btn ara-btn--ghost" id="ara-dismiss">Got it</span>
         </div>
       `;
-      typeSequence(body.querySelectorAll("[data-type]"), [explanation.simple || explanation.definition || ""]);
+
+      // The analogy is collapsed by default (per spec: collapse optional
+      // sections to avoid clutter), so it shouldn't burn the typewriter
+      // effect on something the student may never open — it's typed lazily
+      // the first time they expand it instead.
+      const typedEls = Array.from(body.querySelectorAll("[data-type]"));
+      const analogyEl = analogy ? typedEls.pop() : null;
+      const texts = [mainText];
+      if (intuition) texts.push(intuition);
+      if (example) texts.push(example);
+      typeSequence(typedEls, texts);
+
+      if (analogy) {
+        const toggle = body.querySelector("#ara-analogy-toggle");
+        const content = body.querySelector("#ara-analogy-content");
+        let expanded = false;
+        let typed = false;
+        toggle.addEventListener("click", () => {
+          expanded = !expanded;
+          content.hidden = !expanded;
+          toggle.textContent = expanded ? "🔗 Hide analogy" : "🔗 Show analogy";
+          if (expanded && !typed) {
+            typed = true;
+            typeInto(analogyEl, analogy);
+          }
+        });
+      }
     }
 
     body.querySelector("#ara-dismiss").addEventListener("click", clearCard);
@@ -891,6 +985,7 @@
   }
 
   document.addEventListener("mouseup", (e) => {
+    if (!isActive) return;
     if (root && root.contains(e.target)) return; // clicking our own UI must never re-trigger selection detection
     setTimeout(onSelectionChange, 0);
   });
@@ -900,9 +995,54 @@
     }
   });
 
+  // Tears down any visible UI without touching the stored domain/state, so
+  // turning the extension back on later doesn't lose anything -- it just
+  // stops reacting to the page until re-enabled.
+  function deactivate() {
+    isActive = false;
+    clearButton();
+    clearCard();
+    clearToast();
+    if (root) {
+      root.querySelectorAll(".ara-banner, .ara-domain-editor").forEach((el) => el.remove());
+    }
+  }
+
+  function activate() {
+    isActive = true;
+    registerPage(); // resolve domain / show the confirmation banner as if the page just loaded
+  }
+
+  function init() {
+    chrome.runtime.sendMessage({ type: "GET_ENABLED_STATE", hostname: location.hostname }, (response) => {
+      // If the background script can't be reached at all, fail open rather
+      // than silently doing nothing forever -- a broken message channel
+      // shouldn't look identical to "the student turned this off on purpose".
+      const enabled = !chrome.runtime.lastError && response?.ok ? response.enabled : true;
+      isActive = enabled;
+      if (enabled) registerPage();
+    });
+  }
+
+  // Lets the popup's on/off toggle (global or per-site) take effect on
+  // already-open tabs immediately, instead of only applying after the next
+  // page load/refresh.
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== "ENABLED_STATE_CHANGED") return;
+    chrome.runtime.sendMessage({ type: "GET_ENABLED_STATE", hostname: location.hostname }, (response) => {
+      const enabled = !chrome.runtime.lastError && response?.ok ? response.enabled : true;
+      if (enabled === isActive) return;
+      if (enabled) {
+        activate();
+      } else {
+        deactivate();
+      }
+    });
+  });
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", registerPage);
+    document.addEventListener("DOMContentLoaded", init);
   } else {
-    registerPage();
+    init();
   }
 })();

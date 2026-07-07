@@ -67,7 +67,7 @@ function isMCQ(text) {
   return extractMcqOptionLetters(text).length >= 2;
 }
 
-function buildFastExplanationPrompt(concept, domain) {
+function buildFastExplanationPrompt(concept, domain, seenBefore) {
   domain = normalizeDomain(domain);
   const label = buildConceptLabel(concept, domain);
 
@@ -120,15 +120,40 @@ Respond ONLY with strict JSON, no markdown fences, no preamble, matching exactly
 }`;
   }
 
-  return `You are explaining a concept to a university student who is reading a lecture or document and just highlighted a term.
+  // Default: a single term/short phrase the student is stuck on. This is
+  // the "quick glance while reading" path -- Feynman-style plain-language
+  // explanation, classified by difficulty, and aware of whether the
+  // student has met this concept through the tool before so it doesn't
+  // repeat a basic explanation every single time.
+  const memoryLine = seenBefore
+    ? "Memory note: the student has encountered this exact concept through this tool before. Do NOT repeat a beginner-level explanation from scratch -- go slightly deeper than a first encounter would warrant, and if it fits naturally, briefly connect it to what a returning student would already know."
+    : "Memory note: this is the student's first time meeting this concept through this tool -- start simple and intuitive, as if teaching it for the first time.";
+
+  return `You are an expert AI learning assistant embedded inside a reading extension for university students. The student highlighted the concept below because they are stuck or confused while reading academic or technical content. Your ONLY job is to help them understand it quickly and clearly enough to keep reading without leaving the page -- you are not a dictionary, and this must not read like a textbook entry.
 
 Concept: ${label}
 
+${memoryLine}
+
+First, silently judge how difficult this concept is for a university student -- BEGINNER, INTERMEDIATE, or ADVANCED -- and let that shape your language:
+- BEGINNER -> very simple everyday language, lean on the analogy
+- INTERMEDIATE -> balanced explanation, some technical vocabulary is fine
+- ADVANCED -> more technical depth is fine, but stay clear and short, not a wall of text
+
+Then explain it using this structure, kept SHORT -- this is a quick-glance popup, not an essay:
+1. A simple, everyday-language explanation (Feynman technique: explain it like to a smart friend outside the field, no jargon-as-definition)
+2. The intuition: why this concept exists, or what problem it solves
+3. One concrete, real-world example
+4. An analogy, ONLY if it genuinely makes it click faster (leave it an empty string otherwise -- don't force one)
+
 Respond ONLY with strict JSON, no markdown fences, no preamble, matching exactly this shape:
 {
-  "definition": "one precise sentence",
-  "simple": "a 1-2 sentence plain-language explanation, as if to a beginner",
-  "example": "one short concrete example"
+  "difficulty": "BEGINNER" | "INTERMEDIATE" | "ADVANCED",
+  "title": "a short, clean title for this concept (a few words)",
+  "explanation": "the simple Feynman-style explanation",
+  "intuition": "why it exists / what problem it solves",
+  "example": "one real-world example",
+  "analogy": "an optional analogy, or an empty string if it wouldn't genuinely help"
 }`;
 }
 

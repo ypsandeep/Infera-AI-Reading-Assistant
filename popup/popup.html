@@ -10,6 +10,10 @@
     <header class="panel__header">
       <span class="panel__mark">AI</span>
       <h1 class="panel__title">Reading Assistant</h1>
+      <label class="switch" title="Turn the extension on or off everywhere">
+        <input type="checkbox" id="globalEnabledToggle" />
+        <span class="switch__track"><span class="switch__thumb"></span></span>
+      </label>
     </header>
 
     <section class="status" id="status">
@@ -25,6 +29,14 @@
       <div class="domain-row">
         <span class="domain-row__label">Domain</span>
         <select id="domainSelect" class="domain-row__select"></select>
+      </div>
+
+      <div class="site-toggle-row">
+        <span class="site-toggle-row__label">Enabled on this site</span>
+        <label class="switch switch--small" title="Turn the extension off just for this site">
+          <input type="checkbox" id="siteEnabledToggle" />
+          <span class="switch__track"><span class="switch__thumb"></span></span>
+        </label>
       </div>
     </section>
 

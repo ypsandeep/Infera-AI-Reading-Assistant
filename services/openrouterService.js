@@ -73,12 +73,22 @@ async function callOpenRouter(prompt, apiKey, model, maxTokens = 800) {
       }),
     });
   } catch {
-    // fetch() itself throws (rather than resolving with a non-ok status)
-    // on network-level failures -- offline, DNS failure, no route, a
-    // blocked/dropped connection, etc. An HTTP error response (4xx/5xx)
-    // never reaches this catch; that's handled separately below.
-    const err = new Error("No internet connection. Reconnect and try again.");
-    err.code = "NO_INTERNET";
+    // fetch() itself throws (rather than resolving with a non-ok status) on
+    // a whole range of causes: genuinely being offline, but also CORS
+    // rejections, a dropped/reset connection, a transient DNS hiccup, or
+    // the request being aborted mid-flight. Blaming ALL of these on "no
+    // internet connection" was actively misleading whenever the real cause
+    // was something else entirely (and confusing when the user's internet
+    // was fine). Only report NO_INTERNET when the browser itself confirms
+    // it's offline; otherwise report a distinct, honest "couldn't reach
+    // the server" error.
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const err = new Error(
+      offline
+        ? "No internet connection. Reconnect and try again."
+        : "Couldn't reach OpenRouter. This can be a dropped connection or a temporary hiccup — please try again."
+    );
+    err.code = offline ? "NO_INTERNET" : "NETWORK_ERROR";
     throw err;
   }
 
@@ -109,13 +119,13 @@ async function callOpenRouter(prompt, apiKey, model, maxTokens = 800) {
   }
 }
 
-async function getFastExplanation(concept, domain, apiKey, model) {
-  const prompt = self.ARAPromptBuilder.buildFastExplanationPrompt(concept, domain);
-  // This is meant to be the *fast* path (a definition + 1-2 sentences +
-  // example, or an answer + short reasoning) — it never needs more than a
-  // few hundred tokens. Capping it tightly cuts real generation time
-  // instead of leaving room for the model to ramble.
-  return callOpenRouter(prompt, apiKey, model, 400);
+async function getFastExplanation(concept, domain, apiKey, model, seenBefore) {
+  const prompt = self.ARAPromptBuilder.buildFastExplanationPrompt(concept, domain, seenBefore);
+  // This is meant to be the *fast* path. The plain-term shape grew a bit
+  // (title/intuition/analogy added alongside explanation/example), so it
+  // gets a slightly bigger budget than before to avoid truncated JSON,
+  // while staying small enough to keep real latency low.
+  return callOpenRouter(prompt, apiKey, model, 550);
 }
 
 async function getLearningObject(concept, domain, apiKey, model) {
