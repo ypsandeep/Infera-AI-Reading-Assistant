@@ -1,3 +1,11 @@
+## Demo
+
+![Infera demo](./docs/demo.gif)
+
+*Highlight any word, phrase, sentence, or quiz question on any webpage or
+PDF → get an instant, subject-aware explanation. Ask "Learn more" for a
+deeper, adaptively-structured breakdown.*
+
 # AI Reading Assistant — Chrome Extension
 
 A full implementation of the architecture: highlight a word on any webpage
