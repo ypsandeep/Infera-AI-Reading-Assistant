@@ -1,152 +1,235 @@
-// services/openrouterService.js
-// Talks to OpenRouter (https://openrouter.ai) — an OpenAI-compatible chat
-// completions API that can route to many underlying models. Requires an
-// API key set via the options page.
+// services/domainService.js
+// Pure local heuristic — no AI call. Looks at title/headings/hostname text
+// and scores it against keyword sets for each domain.
+//
+// Expanded to cover a full university course catalogue (engineering,
+// health sciences, arts/social sciences, management, pure sciences, etc.)
+// so the domain guess — and therefore the domain-aware explanation — is
+// useful across faculties, not just STEM/CS.
 
-const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "openai/gpt-4o-mini";
+const DOMAINS = [
+  "Artificial Intelligence",
+  "Computer Science",
+  "Mathematics",
+  "Physics",
+  "Chemistry",
+  "Electrical & Electronics Engineering",
+  "Mechanical Engineering",
+  "Automotive Engineering",
+  "Civil Engineering",
+  "Biology",
+  "Medicine",
+  "Nursing & Health Sciences",
+  "Veterinary Science",
+  "Dentistry",
+  "Pharmacy",
+  "Psychology",
+  "Social Work",
+  "Geography & GIS",
+  "Fine Arts & Design",
+  "Business & Management",
+  "Law",
+  "Agriculture & Environmental Science",
+  "Other",
+];
 
-function stripJsonFences(text) {
-  return text.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
-}
+const KEYWORDS = {
+  "Artificial Intelligence": [
+    "machine learning", "deep learning", "neural network", "regression",
+    "classification", "supervised", "unsupervised", "reinforcement learning",
+    "gradient descent", "training data", "large language model", "dataset",
+    "artificial intelligence", "chatbot", "computer vision", "nlp",
+  ],
+  "Computer Science": [
+    "algorithm", "data structure", "complexity", "binary tree", "sorting",
+    "operating system", "compiler", "database", "software engineering",
+    "programming", "recursion", "object-oriented", "api", "framework",
+  ],
+  "Mathematics": [
+    "theorem", "proof", "integral", "derivative", "matrix", "vector space",
+    "probability", "calculus", "algebra", "geometry", "statistics",
+    "differential equation", "eigenvalue", "combinatorics",
+  ],
+  "Physics": [
+    "quantum", "kinematics", "electromagnetism", "thermodynamics", "optics",
+    "relativity", "particle physics", "velocity", "acceleration",
+    "momentum", "wave function", "entropy", "friction",
+  ],
+  "Chemistry": [
+    "chemical reaction", "compound", "molecule", "acid", "chemical base", "bond",
+    "catalyst", "organic chemistry", "periodic table", "aqueous solution",
+    "titration", "oxidation", "reduction", "stoichiometry", "polymer",
+  ],
+  "Electrical & Electronics Engineering": [
+    "circuit", "voltage", "electric current", "resistor", "capacitor", "transistor",
+    "semiconductor", "signal processing", "amplifier", "microcontroller",
+    "pcb", "diode", "inductor", "power supply",
+  ],
+  "Mechanical Engineering": [
+    "stress", "strain", "torque", "thermodynamics", "fluid dynamics",
+    "kinematics", "material science", "beam", "structural load", "mechanics",
+    "gear", "engine design", "manufacturing process", "cad",
+  ],
+  "Automotive Engineering": [
+    "vehicle", "automobile", "automotive", "car body", "chassis",
+    "combustion engine", "internal combustion", "powertrain", "drivetrain",
+    "transmission", "gearbox", "suspension", "brake", "braking system",
+    "tire", "tyre", "wheel alignment", "fuel injection", "emissions",
+    "catalytic converter", "electric vehicle", "battery pack",
+    "hybrid vehicle", "crash test", "crashworthiness", "clutch",
+    "exhaust system", "ecu", "engine control unit", "ignition system",
+    "fuel efficiency", "horsepower", "camshaft", "crankshaft",
+    "axle", "differential", "adas", "autonomous vehicle", "durability testing",
+  ],
+  "Civil Engineering": [
+    "structural", "concrete", "reinforcement", "surveying", "foundation",
+    "construction", "geotechnical", "bridge design", "highway", "truss",
+    "building code", "hydraulics", "urban planning",
+  ],
+  "Biology": [
+    "cell biology", "organism", "dna", "protein", "evolution", "genome",
+    "ecosystem", "photosynthesis", "enzyme", "metabolism", "species",
+    "chromosome", "mitosis", "taxonomy",
+  ],
+  "Medicine": [
+    "diagnosis", "symptom", "syndrome", "pathology", "clinical", "patient",
+    "disease", "treatment", "anatomy", "physiology", "prognosis",
+    "infection", "therapy", "surgical", "medication", "biopsy",
+  ],
+  "Nursing & Health Sciences": [
+    "nursing", "vital signs", "patient care", "healthcare", "clinical trial",
+    "public health", "epidemiology", "wound care", "triage", "hygiene",
+    "immunization", "rehabilitation",
+  ],
+  "Veterinary Science": [
+    "veterinary", "animal health", "livestock", "zoonotic", "breed",
+    "canine", "feline", "equine", "animal husbandry", "vaccination",
+    "parasite", "wildlife", "large animal",
+  ],
+  "Dentistry": [
+    "dental", "tooth", "teeth", "oral", "cavity", "enamel", "gum",
+    "orthodontic", "root canal", "periodontal", "molar", "plaque",
+    "dental caries", "crown", "filling",
+  ],
+  "Pharmacy": [
+    "drug", "dosage", "pharmacology", "prescription", "pharmacokinetics",
+    "side effect", "active ingredient", "clinical dose", "formulation",
+    "generic drug", "contraindication",
+  ],
+  "Psychology": [
+    "cognitive", "behavior", "anxiety", "perception", "memory",
+    "personality", "therapy", "emotion", "motivation", "psychiatric",
+    "disorder", "developmental psychology", "conditioning",
+  ],
+  "Social Work": [
+    "social work", "case work", "community", "welfare", "advocacy",
+    "intervention", "client", "vulnerable", "safeguarding", "counseling",
+    "social policy", "family services", "rehabilitation program",
+  ],
+  "Geography & GIS": [
+    "gis", "geographic information system", "spatial", "cartography",
+    "remote sensing", "coordinate system", "raster", "vector layer",
+    "topography", "geospatial", "satellite imagery", "land use",
+    "climate", "geology",
+  ],
+  "Fine Arts & Design": [
+    "composition", "aesthetic", "palette", "sculpture", "visual art",
+    "typography", "design principle", "perspective drawing", "medium",
+    "art history", "installation", "curatorial", "portfolio", "critique",
+  ],
+  "Business & Management": [
+    "marketing", "revenue", "strategy", "finance", "management",
+    "stakeholder", "investment", "supply chain", "entrepreneur",
+    "leadership", "operations", "human resources", "branding", "budget",
+  ],
+  "Law": [
+    "statute", "litigation", "contract law", "jurisdiction", "plaintiff",
+    "defendant", "tort", "constitutional", "legal precedent", "clause",
+    "liability", "regulation",
+  ],
+  "Agriculture & Environmental Science": [
+    "crop", "soil", "irrigation", "sustainability", "biodiversity",
+    "agronomy", "fertilizer", "pesticide", "conservation", "renewable",
+    "climate change", "pollution", "ecology",
+  ],
+};
 
-function friendlyErrorFromStatus(status, bodyText) {
-  let apiMessage = "";
-  try {
-    const parsed = JSON.parse(bodyText);
-    apiMessage = parsed?.error?.message || "";
-  } catch {
-    // body wasn't JSON, ignore
-  }
+const HOSTNAME_HINTS = [
+  { pattern: /lms\.|university|\.edu/i, weight: 0 }, // neutral, just confirms academic context
+];
 
-  if (status === 429) {
-    return "You've hit OpenRouter's rate limit or run out of credits for now. Wait a moment and try again, or check your usage at openrouter.ai/activity.";
+function scoreText(text, keywords) {
+  const lower = text.toLowerCase();
+  let score = 0;
+  for (const kw of keywords) {
+    if (lower.includes(kw)) score += kw.split(" ").length; // multi-word matches count more
   }
-  if (status === 401) {
-    return "That OpenRouter API key looks invalid or missing. Double-check it on the Settings page.";
-  }
-  if (status === 402) {
-    return "OpenRouter says this account is out of credit. Add credit at openrouter.ai/credits.";
-  }
-  if (status === 400 && /model/i.test(apiMessage)) {
-    return `OpenRouter rejected the model name: ${apiMessage}`;
-  }
-  return apiMessage ? `OpenRouter error: ${apiMessage}` : `OpenRouter API error (${status}).`;
+  return score;
 }
 
 /**
- * @param {string} prompt
- * @param {string} apiKey
- * @param {string} [model] defaults to DEFAULT_MODEL if not provided
+ * @param {{title: string, headings: {h1: string[], h2: string[], h3: string[]}, hostname: string, meta?: {description?: string, keywords?: string}, bodySnippet?: string, pdfFileName?: string}} pageContext
+ * @returns {{ domain: string, confidence: number, scores: Record<string, number> }}
  */
-async function callOpenRouter(prompt, apiKey, model, maxTokens = 800) {
-  if (!apiKey) {
-    const err = new Error("Missing OpenRouter API key. Set it in the extension's options page.");
-    err.code = "NO_API_KEY";
-    throw err;
+function suggestDomain(pageContext) {
+  // Title + headings alone are frequently empty or too generic (PDFs,
+  // slide viewers, single-page apps) which used to make the guesser fall
+  // back to "Other" far more than it should, or lock onto a wrong domain
+  // from one stray word. Meta description/keywords, a snippet of visible
+  // body text, and the PDF filename (e.g. "CS101_Sorting_Algorithms.pdf")
+  // give it much more real signal to work with.
+  const normalizedFileName = (pageContext.pdfFileName || "").replace(/[_\-.]+/g, " ");
+  const text = [
+    pageContext.title || "",
+    ...(pageContext.headings?.h1 || []),
+    ...(pageContext.headings?.h2 || []),
+    ...(pageContext.headings?.h3 || []),
+    pageContext.meta?.description || "",
+    pageContext.meta?.keywords || "",
+    normalizedFileName,
+    pageContext.bodySnippet || "",
+  ].join(" ");
+
+  const scores = {};
+  for (const domain of Object.keys(KEYWORDS)) {
+    scores[domain] = scoreText(text, KEYWORDS[domain]);
   }
 
-  // Proactive check: the service worker's `navigator.onLine` is a cheap,
-  // immediate signal before even attempting the request.
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    const err = new Error("No internet connection. Reconnect and try again.");
-    err.code = "NO_INTERNET";
-    throw err;
-  }
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const [topDomain, topScore] = ranked[0];
+  const [, secondScore] = ranked[1] || [null, 0];
 
-  let response;
-  try {
-    response = await fetch(OPENROUTER_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        // OpenRouter uses these for its optional leaderboard/analytics — not required to be real URLs.
-        "HTTP-Referer": "https://ai-reading-assistant.local",
-        "X-Title": "AI Reading Assistant",
-      },
-      body: JSON.stringify({
-        model: model || DEFAULT_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        max_tokens: maxTokens,
-      }),
-    });
-  } catch {
-    // fetch() itself throws (rather than resolving with a non-ok status) on
-    // a whole range of causes: genuinely being offline, but also CORS
-    // rejections, a dropped/reset connection, a transient DNS hiccup, or
-    // the request being aborted mid-flight. Blaming ALL of these on "no
-    // internet connection" was actively misleading whenever the real cause
-    // was something else entirely (and confusing when the user's internet
-    // was fine). Only report NO_INTERNET when the browser itself confirms
-    // it's offline; otherwise report a distinct, honest "couldn't reach
-    // the server" error.
-    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-    const err = new Error(
-      offline
-        ? "No internet connection. Reconnect and try again."
-        : "Couldn't reach OpenRouter. This can be a dropped connection or a temporary hiccup — please try again."
-    );
-    err.code = offline ? "NO_INTERNET" : "NETWORK_ERROR";
-    throw err;
-  }
+  // Confident if there's a real signal (score of at least 2 — i.e. more
+  // than one throwaway single-word match) and it's not essentially tied
+  // with the runner-up. A margin of 2 was too strict once real body-text
+  // signal was added: a page that clearly scored e.g. Dentistry=2 vs.
+  // Medicine=1 (a shared term like "pathology") is a confident dentistry
+  // match, not an ambiguous one.
+  const confident = topScore >= 2 && topScore >= secondScore + 1;
 
-  if (!response.ok) {
-    const bodyText = await response.text().catch(() => "");
-    const err = new Error(friendlyErrorFromStatus(response.status, bodyText));
-    err.code = response.status === 429 ? "QUOTA_EXCEEDED" : "API_ERROR";
-    err.status = response.status;
-    throw err;
-  }
-
-  const data = await response.json();
-  const text = data?.choices?.[0]?.message?.content || "";
-
-  if (!text) {
-    const err = new Error("OpenRouter returned an empty response.");
-    err.code = "EMPTY_RESPONSE";
-    throw err;
-  }
-
-  try {
-    return JSON.parse(stripJsonFences(text));
-  } catch {
-    const err = new Error("OpenRouter response was not valid JSON.");
-    err.code = "PARSE_ERROR";
-    err.raw = text;
-    throw err;
-  }
-}
-
-async function getFastExplanation(concept, domain, apiKey, model, seenBefore) {
-  const prompt = self.ARAPromptBuilder.buildFastExplanationPrompt(concept, domain, seenBefore);
-  // This is meant to be the *fast* path. The plain-term shape grew a bit
-  // (title/intuition/analogy added alongside explanation/example), so it
-  // gets a slightly bigger budget than before to avoid truncated JSON,
-  // while staying small enough to keep real latency low.
-  return callOpenRouter(prompt, apiKey, model, 550);
-}
-
-async function getLearningObject(concept, domain, apiKey, model) {
-  const prompt = self.ARAPromptBuilder.buildLearningObjectPrompt(concept, domain);
-  // The adaptive learning object can return up to 7 short sections (vs.
-  // the old fixed 8-field template) — 750 tokens is comfortably enough
-  // without giving the model room to pad each section out unnecessarily.
-  return callOpenRouter(prompt, apiKey, model, 750);
+  return {
+    domain: confident ? topDomain : "Other",
+    confidence: confident ? Math.min(1, topScore / 6) : 0,
+    needsConfirmation: !confident,
+    scores,
+  };
 }
 
 /**
- * Tier 2 domain classifier — used only when the local keyword heuristic
- * (services/domainService.js) is unconfident. Small, cheap prompt: just
- * a domain name + confidence label, so 60 tokens is plenty.
- * @param {object} pageContext
- * @param {string[]} candidateDomains
- * @returns {Promise<{domain: string, confidence: string}>}
+ * Top N candidate domains by score, for showing a short, glanceable set of
+ * chips in the on-page confirmation banner instead of all ~20 domains.
+ * "Other" is always appended last as an escape hatch.
+ * @param {Record<string, number>} scores
+ * @param {number} n
  */
-async function classifyDomain(pageContext, candidateDomains, apiKey, model) {
-  const prompt = self.ARAPromptBuilder.buildDomainClassificationPrompt(pageContext, candidateDomains);
-  return callOpenRouter(prompt, apiKey, model, 60);
+function topCandidates(scores, n = 5) {
+  const ranked = Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .map(([domain]) => domain)
+    .filter((d) => d !== "Other");
+  const top = ranked.slice(0, n);
+  top.push("Other");
+  return top;
 }
 
-self.ARAOpenRouterService = { getFastExplanation, getLearningObject, classifyDomain, DEFAULT_MODEL };
+self.ARADomainService = { suggestDomain, DOMAINS, topCandidates };
