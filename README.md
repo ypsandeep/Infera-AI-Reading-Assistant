@@ -82,3 +82,13 @@ content.js (DOM selection)
 - No automated tests — would be a good next addition (e.g. Vitest for the
   pure logic in `core/` and `services/domainService.js`, which have zero
   DOM/chrome dependencies and are easy to unit test in isolation).
+
+  ## Ownership & License
+
+© 2026 ypsandeep. All rights reserved.
+
+This repository is shared publicly for **portfolio and demonstration
+purposes only**. The source code, prompts, and design in this project are
+not licensed for reuse, redistribution, or republishing — see
+[LICENSE](./LICENSE) for details.
+
