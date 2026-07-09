@@ -7,10 +7,12 @@
   let pageContext = null;
   let currentDomain = null;
   let domainOptions = []; // last known shortlist, reused by the in-card domain editor
-  let lastExplain = null; // { concept, rect } of the most recent explainConcept() call, for refreshing after a domain change
   let root = null;
   let explainBtnEl = null;
-  let cardEl = null;
+  let cardEl = null; // the single floating card "window" — holds one or more tabs
+  let cardTabs = []; // [{ id, concept, rect, domain, tabBtn, panelEl }, ...], Chrome-tab-style
+  let activeTabId = null;
+  let cardDragState = null; // { offsetX, offsetY } while the card is being dragged, else null
   let toastEl = null;
   let toastTimer = null;
   let lastToastKind = null; // avoid re-spamming the same toast on repeated failures
@@ -31,6 +33,26 @@
     root = document.createElement("div");
     root.id = "ara-root";
     (document.body || document.documentElement).appendChild(root);
+
+    // Render in the browser's top layer. Sites like ChatGPT, Gemini, and
+    // Claude's own web chat wrap their app in containers that use CSS
+    // transform/filter/contain (for page-transition animations or
+    // scroll-locking) — and any ancestor with one of those properties
+    // quietly turns `position: fixed` into "fixed relative to that
+    // ancestor" instead of the real viewport. That's the actual cause of
+    // the card landing in the wrong spot on those pages. The top layer has
+    // no ancestors, so it can't be hijacked like that. `popover="manual"`
+    // keeps it open until we explicitly hide it (no auto-close-on-outside-
+    // click behavior, unlike the default popover type).
+    if (typeof root.showPopover === "function") {
+      try {
+        root.setAttribute("popover", "manual");
+        root.showPopover();
+      } catch (e) {
+        // Older Chromium without full Popover support — falls back to the
+        // plain `position: fixed` behavior above.
+      }
+    }
     return root;
   }
 
@@ -43,11 +65,18 @@
   }
 
   function clearCard() {
+    if (cardDragState) {
+      document.removeEventListener("mousemove", onCardDragMove);
+      document.removeEventListener("mouseup", onCardDragEnd);
+      cardDragState = null;
+    }
     if (cardEl) {
       scrollAnchors.delete(cardEl);
       cardEl.remove();
       cardEl = null;
     }
+    cardTabs = [];
+    activeTabId = null;
   }
 
   function placeNear(el, rect, preferredWidth = 380) {
@@ -68,7 +97,7 @@
   // card, and a paragraph-long selection can put the button's natural
   // position off the bottom/side of the viewport. This clamps any element
   // back inside the visible viewport after it's been placed/rendered.
-  function clampElementToViewport(el) {
+  function clampElementToViewport(el, opts = {}) {
     if (!el) return;
     const margin = 8;
     const box = el.getBoundingClientRect();
@@ -92,6 +121,12 @@
     el.style.top = `${top}px`;
     el.style.left = `${left}px`;
 
+    // Once the student has manually dragged the card, it should stay
+    // exactly where they put it — like a floating window — instead of
+    // being re-anchored to the original selection's spot on the page
+    // every time its content re-renders (new tab, retry, etc.).
+    if (opts.skipAnchor) return;
+
     // Remember this as the element's true position on the page (not just
     // the viewport), so a scroll event can put it back in the same spot
     // relative to the content instead of leaving it frozen mid-air.
@@ -99,7 +134,7 @@
   }
 
   function clampCardToViewport() {
-    clampElementToViewport(cardEl);
+    clampElementToViewport(cardEl, { skipAnchor: cardEl?.dataset.userMoved === "1" });
   }
 
   // Keeps every tracked element (card, explain button, domain editor
@@ -428,7 +463,11 @@
   function showExplainButton(text, rect) {
     ensureRoot();
     clearButton();
-    clearCard();
+    // Deliberately NOT clearing the card here: the student may want to
+    // keep reading the current explanation while highlighting another
+    // word elsewhere on the page. The new word only replaces anything
+    // once they actually click "Explain" — see addTab(), which opens it
+    // as a new tab in the same window instead of tearing the old one down.
 
     // Shown only after the user releases the selection (mouseup fires
     // onSelectionChange) — it never explains automatically. The user must
@@ -444,7 +483,7 @@
       e.preventDefault();
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
-      explainConcept(text, rect);
+      addTab(text, rect);
     });
 
     root.appendChild(btn);
@@ -460,7 +499,7 @@
   // Opens a small popover anchored to the card's domain badge, letting the
   // student pick a different suggested domain or type their own — without
   // needing to wait for the (one-time) confirmation banner to reappear.
-  function toggleDomainEditor(anchorEl) {
+  function toggleDomainEditor(tab, anchorEl) {
     const existing = root.querySelector(".ara-domain-editor");
     if (existing) {
       existing.remove();
@@ -481,10 +520,10 @@
     const applyAndRefresh = (domain) => {
       panel.remove();
       setDomain(domain, () => {
-        // Re-run whatever's currently on screen with the corrected domain,
-        // rather than leaving the student looking at an explanation
-        // generated under the old (wrong) subject.
-        if (lastExplain) explainConcept(lastExplain.concept, lastExplain.rect);
+        // Re-run just this tab with the corrected domain, rather than
+        // leaving the student looking at an explanation generated under
+        // the old (wrong) subject. Other open tabs are untouched.
+        if (tab && cardTabs.some((t) => t.id === tab.id)) refetchTab(tab);
       });
     };
 
@@ -575,50 +614,191 @@
     });
   }
 
-  function explainConcept(concept, rect) {
-    clearButton();
-    clearCard();
-    ensureRoot();
-    lastExplain = { concept, rect };
+  function makeTabId() {
+    return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
 
+  // Builds the empty floating window (header + tab strip + scrollable body
+  // area) once. Individual explanations are added into it via addTab().
+  function createCardPanel(rect) {
     const card = document.createElement("div");
     card.className = "ara-card";
     card.innerHTML = `
-      <div class="ara-card__header">
+      <div class="ara-card__header" id="ara-card-draghandle">
         <div class="ara-card__headertop">
           <div class="ara-card__titlewrap">
             <span class="ara-card__sparkle">✨</span>
-            <span class="ara-card__title">${escapeHtml(concept)}</span>
+            <span class="ara-card__title">Reading Assistant</span>
           </div>
-          <span class="ara-card__close">✕</span>
+          <span class="ara-card__close" id="ara-card-closeall" title="Close all">✕</span>
         </div>
-        <div class="ara-card__subjectrow" id="ara-subjectrow"></div>
+        <div class="ara-card__tabstrip" id="ara-tabstrip"></div>
       </div>
-      <div class="ara-card__body"><div class="ara-spinner-wrap"><span class="ara-spinner"></span><span class="ara-thinking-text">Thinking…</span></div></div>
+      <div class="ara-card__bodywrap" id="ara-bodywrap"></div>
     `;
-    card.querySelector(".ara-card__close").addEventListener("click", clearCard);
+    card.querySelector("#ara-card-closeall").addEventListener("click", clearCard);
     placeNear(card, rect);
     root.appendChild(card);
     cardEl = card;
     clampCardToViewport();
     requestAnimationFrame(() => card.classList.add("ara-card--visible"));
+    setupCardDrag(card);
+    return card;
+  }
 
-    sendMessageWithTimeout({ type: "EXPLAIN_CONCEPT", concept }).then((response) => {
-      if (!cardEl) return;
-      if (!response?.ok) {
-        maybeShowToastForCode(response?.code);
-        renderCardError(response?.error || "Something went wrong reaching the extension.", () =>
-          explainConcept(concept, rect)
-        );
-        return;
-      }
-      renderFastExplanation(concept, response.domain, response.explanation);
+  // Drag-to-reposition: mousedown anywhere on the header (but not on the
+  // close button or a tab) grabs the card; it follows the cursor exactly
+  // and is clamped so it can't be dragged fully off-screen.
+  function setupCardDrag(card) {
+    const handle = card.querySelector("#ara-card-draghandle");
+    handle.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest(".ara-card__close, .ara-tab")) return;
+      e.preventDefault();
+      const box = card.getBoundingClientRect();
+      cardDragState = { offsetX: e.clientX - box.left, offsetY: e.clientY - box.top };
+      card.classList.add("ara-card--dragging");
+      document.addEventListener("mousemove", onCardDragMove);
+      document.addEventListener("mouseup", onCardDragEnd);
     });
   }
 
-  function renderCardError(message, onRetry) {
+  function onCardDragMove(e) {
+    if (!cardDragState || !cardEl) return;
+    const margin = 4;
+    const box = cardEl.getBoundingClientRect();
+    let left = e.clientX - cardDragState.offsetX;
+    let top = e.clientY - cardDragState.offsetY;
+    left = Math.min(Math.max(left, margin), window.innerWidth - box.width - margin);
+    top = Math.min(Math.max(top, margin), window.innerHeight - box.height - margin);
+    cardEl.style.left = `${left}px`;
+    cardEl.style.top = `${top}px`;
+  }
+
+  function onCardDragEnd() {
+    document.removeEventListener("mousemove", onCardDragMove);
+    document.removeEventListener("mouseup", onCardDragEnd);
+    if (!cardDragState) return;
+    cardDragState = null;
     if (!cardEl) return;
-    const body = cardEl.querySelector(".ara-card__body");
+    cardEl.classList.remove("ara-card--dragging");
+    // Once the student has manually placed the card, it stays exactly
+    // where they dropped it — like a floating window — instead of
+    // snapping back or drifting to track the original selection as the
+    // page scrolls.
+    cardEl.dataset.userMoved = "1";
+    scrollAnchors.delete(cardEl);
+  }
+
+  // Highlighting a new word while a card is already open no longer
+  // replaces it — this opens a new tab in the same window (Chrome-tab
+  // style), so the previous explanation stays exactly as it was.
+  function addTab(concept, rect) {
+    ensureRoot();
+    clearButton();
+    if (!cardEl) createCardPanel(rect);
+
+    const tabId = makeTabId();
+    const shortLabel = concept.length > 34 ? concept.slice(0, 34) + "…" : concept;
+
+    const tabBtn = document.createElement("div");
+    tabBtn.className = "ara-tab";
+    tabBtn.title = concept;
+    tabBtn.innerHTML = `
+      <span class="ara-tab__icon">✨</span>
+      <span class="ara-tab__label">${escapeHtml(shortLabel)}</span>
+      <span class="ara-tab__close" title="Close tab">✕</span>
+    `;
+    tabBtn.addEventListener("mousedown", (e) => e.stopPropagation()); // don't let this bubble into the header's drag handler
+    tabBtn.addEventListener("click", (e) => {
+      if (e.target.closest(".ara-tab__close")) return;
+      activateTab(tabId);
+    });
+    tabBtn.querySelector(".ara-tab__close").addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeTab(tabId);
+    });
+
+    const panelEl = document.createElement("div");
+    panelEl.className = "ara-card__tabpanel";
+    panelEl.hidden = true;
+    panelEl.innerHTML = `
+      <div class="ara-card__subjectrow"></div>
+      <div class="ara-card__body"><div class="ara-spinner-wrap"><span class="ara-spinner"></span><span class="ara-thinking-text">Thinking…</span></div></div>
+    `;
+
+    cardEl.querySelector("#ara-tabstrip").appendChild(tabBtn);
+    cardEl.querySelector("#ara-bodywrap").appendChild(panelEl);
+
+    const tab = { id: tabId, concept, rect, domain: null, tabBtn, panelEl };
+    cardTabs.push(tab);
+    activateTab(tabId);
+    clampCardToViewport();
+
+    sendMessageWithTimeout({ type: "EXPLAIN_CONCEPT", concept }).then((response) => {
+      if (!cardTabs.some((t) => t.id === tabId)) return; // tab was closed while this was in flight
+      if (!response?.ok) {
+        maybeShowToastForCode(response?.code);
+        renderCardError(tab, response?.error || "Something went wrong reaching the extension.", () => refetchTab(tab));
+        return;
+      }
+      renderFastExplanation(tab, response.domain, response.explanation);
+    });
+
+    return tab;
+  }
+
+  // Re-runs a single existing tab in place (used for "Try again" and for
+  // refreshing after the domain/subject is changed), without touching any
+  // other open tabs.
+  function refetchTab(tab) {
+    const body = tab.panelEl.querySelector(".ara-card__body");
+    body.innerHTML = `<div class="ara-spinner-wrap"><span class="ara-spinner"></span><span class="ara-thinking-text">Thinking…</span></div>`;
+    clampCardToViewport();
+
+    sendMessageWithTimeout({ type: "EXPLAIN_CONCEPT", concept: tab.concept }).then((response) => {
+      if (!cardTabs.some((t) => t.id === tab.id)) return;
+      if (!response?.ok) {
+        maybeShowToastForCode(response?.code);
+        renderCardError(tab, response?.error || "Something went wrong reaching the extension.", () => refetchTab(tab));
+        return;
+      }
+      renderFastExplanation(tab, response.domain, response.explanation);
+    });
+  }
+
+  function activateTab(tabId) {
+    activeTabId = tabId;
+    cardTabs.forEach((t) => {
+      const isActive = t.id === tabId;
+      t.panelEl.hidden = !isActive;
+      t.tabBtn.classList.toggle("ara-tab--active", isActive);
+    });
+  }
+
+  // Closes one tab (like closing a Chrome tab) without disturbing the
+  // others. Closing the last tab closes the whole window.
+  function closeTab(tabId) {
+    const idx = cardTabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return;
+    const [tab] = cardTabs.splice(idx, 1);
+    tab.tabBtn.remove();
+    tab.panelEl.remove();
+
+    if (!cardTabs.length) {
+      clearCard();
+      return;
+    }
+    if (activeTabId === tabId) {
+      const next = cardTabs[idx] || cardTabs[idx - 1] || cardTabs[0];
+      activateTab(next.id);
+    }
+    clampCardToViewport();
+  }
+
+  function renderCardError(tab, message, onRetry) {
+    if (!tab || !cardTabs.some((t) => t.id === tab.id)) return;
+    const body = tab.panelEl.querySelector(".ara-card__body");
     body.innerHTML = `
       <div class="ara-error-box">
         <span class="ara-error-box__icon">⚠️</span>
@@ -632,9 +812,11 @@
     clampCardToViewport();
   }
 
-  function renderFastExplanation(concept, domain, explanation) {
-    if (!cardEl) return;
-    const subjectRow = cardEl.querySelector("#ara-subjectrow") || cardEl.querySelector(".ara-card__subjectrow");
+  function renderFastExplanation(tab, domain, explanation) {
+    if (!tab || !cardTabs.some((t) => t.id === tab.id)) return;
+    tab.domain = domain;
+    const concept = tab.concept;
+    const subjectRow = tab.panelEl.querySelector(".ara-card__subjectrow");
     let badge = subjectRow.querySelector(".ara-card__domain");
     if (domain) {
       if (!badge) {
@@ -644,10 +826,10 @@
       }
       badge.innerHTML = `<span class="ara-card__domain-dot"></span>${escapeHtml(domain)} <span class="ara-card__domain-edit">✎</span>`;
       badge.title = "Click to change the detected subject";
-      badge.onclick = () => toggleDomainEditor(badge);
+      badge.onclick = () => toggleDomainEditor(tab, badge);
     }
 
-    const body = cardEl.querySelector(".ara-card__body");
+    const body = tab.panelEl.querySelector(".ara-card__body");
 
     if (explanation.isMCQ) {
       // Multiple-choice question: answer first, then why it's right, then
@@ -742,11 +924,12 @@
         diffBadge.remove();
       }
 
-      // A clean AI-generated title reads better in the header than the
-      // raw highlighted text, once we have one.
+      // A clean AI-generated title reads better on the tab than the raw
+      // highlighted text, once we have one.
       if (explanation.title) {
-        const titleEl = cardEl.querySelector(".ara-card__title");
-        if (titleEl) titleEl.textContent = explanation.title;
+        const labelEl = tab.tabBtn.querySelector(".ara-tab__label");
+        if (labelEl) labelEl.textContent = explanation.title.length > 34 ? explanation.title.slice(0, 34) + "…" : explanation.title;
+        tab.tabBtn.title = explanation.title;
       }
 
       // Backward-compatible: anything already sitting in a user's cache
@@ -823,31 +1006,29 @@
       }
     }
 
-    body.querySelector("#ara-dismiss").addEventListener("click", clearCard);
+    body.querySelector("#ara-dismiss").addEventListener("click", () => closeTab(tab.id));
     body.querySelector("#ara-learn-more").addEventListener("click", () => {
-      learnMore(concept, domain);
+      learnMore(tab);
     });
     clampCardToViewport();
   }
 
   // ---------- Learning object (Step 9-10) ----------
 
-  function learnMore(concept, domain) {
-    if (!cardEl) return;
-    const body = cardEl.querySelector(".ara-card__body");
+  function learnMore(tab) {
+    if (!tab || !cardTabs.some((t) => t.id === tab.id)) return;
+    const body = tab.panelEl.querySelector(".ara-card__body");
     body.innerHTML = `<div class="ara-spinner-wrap"><span class="ara-spinner"></span><span class="ara-thinking-text">Building a deeper explanation…</span></div>`;
     clampCardToViewport();
 
-    sendMessageWithTimeout({ type: "LEARN_MORE", concept }).then((response) => {
-      if (!cardEl) return;
+    sendMessageWithTimeout({ type: "LEARN_MORE", concept: tab.concept }).then((response) => {
+      if (!cardTabs.some((t) => t.id === tab.id)) return;
       if (!response?.ok) {
         maybeShowToastForCode(response?.code);
-        renderCardError(response?.error || "Could not load the deeper explanation.", () =>
-          learnMore(concept, domain)
-        );
+        renderCardError(tab, response?.error || "Could not load the deeper explanation.", () => learnMore(tab));
         return;
       }
-      renderLearningObject(response.learningObject, domain);
+      renderLearningObject(tab, response.learningObject, tab.domain);
     });
   }
 
@@ -880,9 +1061,9 @@
     ].filter(([, , value]) => value);
   }
 
-  function renderLearningObject(lo, domain) {
-    if (!cardEl) return;
-    const body = cardEl.querySelector(".ara-card__body");
+  function renderLearningObject(tab, lo, domain) {
+    if (!tab || !cardTabs.some((t) => t.id === tab.id)) return;
+    const body = tab.panelEl.querySelector(".ara-card__body");
     const items = normalizeLearningObjectSections(lo);
     const shownDomain = lo?.domain || domain;
 
@@ -923,7 +1104,7 @@
         <span class="ara-btn ara-btn--ghost" id="ara-dismiss-2">Close</span>
       </div>
     `;
-    body.querySelector("#ara-dismiss-2").addEventListener("click", clearCard);
+    body.querySelector("#ara-dismiss-2").addEventListener("click", () => closeTab(tab.id));
 
     const typedTexts = [];
     if (answerItem) typedTexts.push(answerItem[2]);
