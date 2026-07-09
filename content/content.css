@@ -62,6 +62,26 @@
   height: 0;
 }
 
+/* Rendering #ara-root in the browser's top layer (via the Popover API)
+   is what actually fixes card mispositioning on sites like ChatGPT,
+   Gemini, and Claude's own web chat. Those apps wrap themselves in
+   containers with CSS transform/filter/contain for their animations and
+   scroll-locking, and ANY ancestor with one of those properties silently
+   turns `position: fixed` into "fixed relative to that ancestor" instead
+   of the real viewport — which is exactly why the card used to land in
+   the wrong spot on those pages. The top layer has no ancestors, so this
+   sidesteps the problem entirely. We still keep every rule above as a
+   fallback for the rare browser without Popover support. */
+#ara-root[popover] {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  overflow: visible !important;
+  inset: auto !important;
+  color: inherit !important;
+}
+
 /* ---------- Explain button ---------- */
 
 .ara-explain-btn {
@@ -100,10 +120,12 @@
 .ara-card {
   position: absolute !important;
   pointer-events: auto;
+  display: flex;
+  flex-direction: column;
   width: 380px;
   max-width: 92vw;
   max-height: 75vh;
-  overflow-y: auto;
+  overflow: hidden; /* only .ara-card__bodywrap scrolls, so the header + tab strip stay put like a real window */
   background: var(--ara-surface);
   color: var(--ara-ink);
   border-radius: var(--ara-radius-lg);
@@ -117,16 +139,79 @@
   transition: opacity 0.16s ease, transform 0.16s ease;
 }
 .ara-card--visible { opacity: 1; transform: translateY(0) scale(1); }
+/* No transition while actively being dragged, or the card lags a frame behind the cursor. */
+.ara-card--dragging { transition: none !important; box-shadow: 0 30px 70px -12px rgba(30, 27, 75, 0.38); }
 
 .ara-card__header {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px 18px 13px;
+  padding: 12px 18px 10px;
   background: var(--ara-surface);
   border-bottom: 1px solid var(--ara-border);
   border-radius: var(--ara-radius-lg) var(--ara-radius-lg) 0 0;
+  flex-shrink: 0;
+  cursor: grab; /* the whole header is the drag handle, like a native window title bar */
+  user-select: none;
 }
+.ara-card--dragging .ara-card__header,
+.ara-card__header:active { cursor: grabbing; }
+
+/* ---------- Tab strip (Chrome-tab-style) ---------- */
+/* Highlighting a new word no longer replaces the card — it opens a new
+   tab in the same floating window, so previous explanations stay put. */
+.ara-card__tabstrip {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px -1px;
+  padding: 0 4px;
+}
+.ara-card__tabstrip::-webkit-scrollbar { display: none; }
+
+.ara-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 64px;
+  max-width: 210px;
+  padding: 7px 8px 7px 12px;
+  border-radius: 9px 9px 0 0;
+  background: var(--ara-surface-2);
+  color: var(--ara-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ara-tab:hover { background: var(--ara-surface-3); }
+.ara-tab--active {
+  background: var(--ara-surface);
+  color: var(--ara-ink);
+  box-shadow: 0 -2px 0 var(--ara-primary) inset;
+}
+.ara-tab__icon { font-size: 9px; flex-shrink: 0; }
+.ara-tab__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.ara-tab__close {
+  font-size: 10px;
+  color: var(--ara-faint);
+  padding: 2px 5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.ara-tab__close:hover { background: var(--ara-border); color: var(--ara-ink); }
+
+.ara-card__bodywrap {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ara-card__tabpanel { display: block; }
 
 .ara-card__headertop {
   display: flex;
@@ -165,6 +250,10 @@
 /* Subject/domain row — deliberately its own line right under the title so
    it's immediately visible at the top of the card, not buried inline. */
 .ara-card__subjectrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* Each tab panel now carries its own subject row (domain/difficulty can
+   differ per tab), living just above that tab's body instead of a single
+   shared header row. */
+.ara-card__tabpanel > .ara-card__subjectrow:not(:empty) { padding: 12px 18px 0; }
 
 .ara-card__domain {
   display: inline-flex;
